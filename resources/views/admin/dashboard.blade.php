@@ -11,6 +11,7 @@
                     <h1 class="mt-1 text-2xl font-bold text-white sm:text-3xl">Dashboard log scan</h1>
                 </div>
                 <div class="flex gap-3">
+                    <a href="{{ route('admin.recap') }}" class="inline-flex min-h-12 items-center rounded-xl border border-sky-400/50 px-4 py-3 text-sm font-semibold text-sky-300 transition hover:bg-sky-400/10">Rekap analisa</a>
                     <a href="{{ route('admin.karyawan.index') }}" class="inline-flex min-h-12 items-center rounded-xl border border-yellow-400/50 px-4 py-3 text-sm font-semibold text-yellow-300 transition hover:bg-yellow-400/10">Data karyawan</a>
                     <form method="POST" action="{{ route('admin.logout') }}">
                         @csrf

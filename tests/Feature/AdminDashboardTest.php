@@ -22,6 +22,49 @@ class AdminDashboardTest extends TestCase
         $response->assertRedirect(route('admin.login'));
     }
 
+    public function test_recap_requires_admin_session(): void
+    {
+        $response = $this->get(route('admin.recap'));
+
+        $response->assertRedirect(route('admin.login'));
+    }
+
+    public function test_admin_can_view_recap_analysis_with_filters(): void
+    {
+        $admin = AdminUser::create(['username' => 'admin', 'password' => 'admin123']);
+        $karyawan = Karyawan::create([
+            'nip' => 'LMG-2026-500',
+            'nama' => 'Karyawan Rekap',
+            'bagian' => 'Keuangan',
+            'barcode_value' => 'RECAP-TEST',
+        ]);
+        $gedung = Gedung::create(['nama_gedung' => 'Gedung Rekap']);
+        $alasan = AlasanKeluar::create(['label' => 'Keperluan operasional']);
+        LogScan::create([
+            'karyawan_id' => $karyawan->id,
+            'gedung_id' => $gedung->id,
+            'tipe' => 'out',
+            'alasan_id' => $alasan->id,
+            'scanned_at' => '2026-09-14 09:00:00',
+        ]);
+        LogScan::create([
+            'karyawan_id' => $karyawan->id,
+            'gedung_id' => $gedung->id,
+            'tipe' => 'in',
+            'scanned_at' => '2026-09-14 09:45:00',
+        ]);
+
+        $response = $this->withSession(['admin_user_id' => $admin->id])
+            ->get(route('admin.recap', ['date_from' => '2026-09-14', 'bagian' => 'Keuangan']));
+
+        $response->assertOk()
+            ->assertSee('Rekap analisa aktivitas')
+            ->assertSee('Karyawan Rekap')
+            ->assertSee('45 menit')
+            ->assertSee('Keperluan operasional')
+            ->assertSee('Gedung Rekap');
+    }
+
     public function test_admin_can_view_paired_and_anomalous_logs(): void
     {
         $admin = AdminUser::create(['username' => 'admin', 'password' => 'admin123']);
