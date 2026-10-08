@@ -57,11 +57,13 @@ class AdminKaryawanController extends Controller
     public function uploadPhoto(Request $request, Karyawan $karyawan): JsonResponse
     {
         $validated = $request->validate([
-            'foto' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:8192', 'dimensions:min_width=160,min_height=160,max_width=8000,max_height=8000'],
+            'foto' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048', 'dimensions:min_width=200,min_height=200,max_width=2000,max_height=2000'],
         ]);
 
         $oldPhotoPath = $karyawan->foto_path;
-        $photoPath = Storage::disk('public')->putFile('karyawan-photos', $validated['foto']);
+        $extension = $validated['foto']->getClientOriginalExtension() ?: 'jpg';
+        $filename = uniqid('karyawan-', true).'.'.$extension;
+        $photoPath = $validated['foto']->storeAs('karyawan-photos', $filename, 'public');
 
         if ($photoPath === false) {
             return response()->json([
@@ -73,7 +75,7 @@ class AdminKaryawanController extends Controller
             'foto_path' => $photoPath,
         ]);
 
-        if ($oldPhotoPath !== null) {
+        if ($oldPhotoPath !== null && $oldPhotoPath !== $photoPath) {
             Storage::disk('public')->delete($oldPhotoPath);
         }
 

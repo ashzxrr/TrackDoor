@@ -47,15 +47,52 @@
         let filteredRows = [...rows]; let currentPage = 1; let photoRows = []; let photoIndex = 0; let photoSaving = false;
         const get = id => document.getElementById(id);
 
+        function compressImage(file, { maxDimension = 1200, quality = 0.8 } = {}) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const scale = Math.min(1, maxDimension / Math.max(img.width, img.height));
+                        const width = Math.max(1, Math.round(img.width * scale));
+                        const height = Math.max(1, Math.round(img.height * scale));
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+
+                        const context = canvas.getContext('2d');
+                        context.drawImage(img, 0, 0, width, height);
+
+                        canvas.toBlob(blob => {
+                            if (!blob) {
+                                reject(new Error('Foto gagal dikompres. Coba foto lain.'));
+                                return;
+                            }
+
+                            const compressed = new File([blob], file.name.replace(/\.[^/.]+$/, '') + '.jpg', {
+                                type: 'image/jpeg',
+                                lastModified: Date.now(),
+                            });
+                            resolve(compressed);
+                        }, 'image/jpeg', quality);
+                    };
+                    img.onerror = () => reject(new Error('Format foto tidak valid.'));
+                    img.src = reader.result;
+                };
+                reader.onerror = () => reject(new Error('Foto tidak dapat dibaca.'));
+                reader.readAsDataURL(file);
+            });
+        }
+
         function applyFilters() { const query = get('search').value.toLowerCase().trim(); const bagian = get('filterBagian').value.toLowerCase(); const foto = get('filterFoto').value; filteredRows = rows.filter(row => { const hasPhoto = Boolean(photoUrls.get(row.dataset.id)); return (!query || row.dataset.search.includes(query)) && (!bagian || row.dataset.bagian === bagian) && (!foto || (foto === 'ada' ? hasPhoto : !hasPhoto)); }); renderPage(1); }
         function renderPage(page) { const totalPages = Math.max(1, Math.ceil(filteredRows.length / rowsPerPage)); currentPage = Math.min(Math.max(page, 1), totalPages); const start = (currentPage - 1) * rowsPerPage; rows.forEach(row => { const visible = filteredRows.slice(start, start + rowsPerPage).includes(row); row.classList.toggle('hidden', !visible); const check = row.querySelector('.karyawan-check'); check.checked = selectedIds.has(row.dataset.id); row.classList.toggle('bg-yellow-400/10', check.checked); }); const first = filteredRows.length ? start + 1 : 0; const last = Math.min(start + rowsPerPage, filteredRows.length); get('paginationInfo').textContent = `Menampilkan ${first}-${last} dari ${filteredRows.length} karyawan`; renderPagination(totalPages); updateSelectionUi(); }
         function renderPagination(totalPages) { const container = get('paginationButtons'); container.innerHTML = ''; if (totalPages <= 1) return; [['Sebelumnya', currentPage - 1], ...Array.from({ length: totalPages }, (_, index) => [String(index + 1), index + 1]), ['Berikutnya', currentPage + 1]].forEach(([label, page]) => { if (page < 1 || page > totalPages) return; const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.className = page === currentPage ? 'rounded-lg bg-yellow-400 px-3 py-2 text-xs font-bold text-slate-950' : 'rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:text-white'; button.onclick = () => renderPage(page); container.appendChild(button); }); }
         function updateSelectionUi() { const count = selectedIds.size; get('selectedCount').textContent = count; get('uploadCount').textContent = count ? `(${count})` : ''; get('btnUpload').disabled = count === 0; const visibleChecks = filteredRows.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage).map(row => row.querySelector('.karyawan-check')); get('checkAll').checked = visibleChecks.length > 0 && visibleChecks.every(check => selectedIds.has(check.closest('tr').dataset.id)); get('checkAll').indeterminate = visibleChecks.some(check => selectedIds.has(check.closest('tr').dataset.id)) && !get('checkAll').checked; }
         function setRowSelection(row, checked) { checked ? selectedIds.add(row.dataset.id) : selectedIds.delete(row.dataset.id); row.classList.toggle('bg-yellow-400/10', checked); updateSelectionUi(); }
-        function renderPhotoSlide() { const row = photoRows[photoIndex]; const name = row.querySelector('td:nth-child(2) span').textContent.trim(); get('photoModalTitle').textContent = name; get('photoProgress').textContent = `Foto ${photoIndex + 1} dari ${photoRows.length}`; get('photoInput').value = ''; const url = pendingFiles.has(row.dataset.id) ? URL.createObjectURL(pendingFiles.get(row.dataset.id)) : photoUrls.get(row.dataset.id); get('photoPreview').innerHTML = url ? `<img src="${url}" alt="Preview foto ${name}" class="h-full w-full object-cover">` : 'Belum ada foto'; get('prevPhoto').disabled = photoIndex === 0 || photoSaving; get('nextPhoto').textContent = photoIndex === photoRows.length - 1 ? 'Simpan & selesai' : 'Simpan & berikutnya'; get('nextPhoto').disabled = photoSaving; }
-        async function saveCurrentPhoto() { const row = photoRows[photoIndex]; const file = pendingFiles.get(row.dataset.id); if (!file) return true; photoSaving = true; showLoadingScreen('Menyimpan foto...'); get('photoStatus').textContent = 'Menyimpan foto...'; const body = new FormData(); body.append('foto', file); try { const response = await fetch(row.dataset.uploadUrl, { method: 'POST', body, headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '', Accept: 'application/json' } }); const data = await response.json().catch(() => ({})); if (!response.ok) { const validationMessage = data.errors?.foto?.[0] || data.message || `Upload gagal (HTTP ${response.status})`; throw new Error(validationMessage); } photoUrls.set(row.dataset.id, data.url); row.dataset.photo = data.url; pendingFiles.delete(row.dataset.id); const thumb = row.querySelector('.photo-thumb'); thumb.innerHTML = `<img src="${data.url}" alt="Foto ${row.querySelector('td:nth-child(2) span').textContent.trim()}" class="h-full w-full object-cover">`; get('photoCount').textContent = rows.filter(item => photoUrls.get(item.dataset.id)).length; return true; } catch (error) { get('photoStatus').textContent = error.message || 'Foto gagal disimpan. Coba lagi.'; return false; } finally { hideLoadingScreen(); photoSaving = false; renderPhotoSlide(); } }
+        function renderPhotoSlide() { const row = photoRows[photoIndex]; if (!row) return; const name = row.querySelector('td:nth-child(2) span').textContent.trim(); get('photoModalTitle').textContent = name; get('photoProgress').textContent = `Foto ${photoIndex + 1} dari ${photoRows.length}`; get('photoInput').value = ''; const url = pendingFiles.has(row.dataset.id) ? URL.createObjectURL(pendingFiles.get(row.dataset.id)) : photoUrls.get(row.dataset.id); get('photoPreview').innerHTML = url ? `<img src="${url}" alt="Preview foto ${name}" class="h-full w-full object-cover">` : 'Belum ada foto'; get('prevPhoto').disabled = photoIndex === 0 || photoSaving; get('nextPhoto').textContent = photoIndex === photoRows.length - 1 ? 'Simpan & selesai' : 'Simpan & berikutnya'; get('nextPhoto').disabled = photoSaving; }
+        async function saveCurrentPhoto() { const row = photoRows[photoIndex]; const file = pendingFiles.get(row.dataset.id); if (!file) return true; photoSaving = true; get('photoStatus').textContent = 'Mengompres dan mengirim foto...'; const safeFile = await compressImage(file, { maxDimension: 1200, quality: 0.8 }); const body = new FormData(); body.append('foto', safeFile, safeFile.name); try { const response = await fetch(row.dataset.uploadUrl, { method: 'POST', body, headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '', Accept: 'application/json' } }); const data = await response.json().catch(() => ({})); if (!response.ok) { const validationMessage = data.errors?.foto?.[0] || data.message || `Upload gagal (HTTP ${response.status})`; throw new Error(validationMessage); } photoUrls.set(row.dataset.id, data.url); row.dataset.photo = data.url; pendingFiles.delete(row.dataset.id); const thumb = row.querySelector('.photo-thumb'); thumb.innerHTML = `<img src="${data.url}" alt="Foto ${row.querySelector('td:nth-child(2) span').textContent.trim()}" class="h-full w-full object-cover">`; get('photoCount').textContent = rows.filter(item => photoUrls.get(item.dataset.id)).length; get('photoStatus').textContent = 'Foto berhasil disimpan.'; return true; } catch (error) { get('photoStatus').textContent = error.message || 'Foto gagal disimpan. Coba lagi.'; return false; } finally { photoSaving = false; renderPhotoSlide(); } }
         async function nextPhoto() { if (!(await saveCurrentPhoto())) return; if (photoIndex < photoRows.length - 1) { photoIndex++; renderPhotoSlide(); } else closePhotoModal(); }
-        function openPhotoModal() { photoRows = rows.filter(row => selectedIds.has(row.dataset.id)); photoIndex = 0; get('photoStatus').textContent = ''; get('photoModal').classList.remove('hidden'); get('photoModal').classList.add('flex'); renderPhotoSlide(); }
+        function openPhotoModal() { photoRows = rows.filter(row => selectedIds.has(row.dataset.id)); if (!photoRows.length) return; photoIndex = 0; get('photoStatus').textContent = ''; get('photoModal').classList.remove('hidden'); get('photoModal').classList.add('flex'); renderPhotoSlide(); }
         function closePhotoModal() { if (photoSaving) return; get('photoModal').classList.add('hidden'); get('photoModal').classList.remove('flex'); }
 
         rows.forEach(row => {
@@ -70,7 +107,7 @@
         get('checkAll').addEventListener('change', event => filteredRows.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage).forEach(row => { const check = row.querySelector('.karyawan-check'); check.checked = event.target.checked; setRowSelection(row, event.target.checked); }));
         ['search', 'filterBagian', 'filterFoto'].forEach(id => get(id).addEventListener(id === 'search' ? 'input' : 'change', applyFilters));
         get('btnUpload').addEventListener('click', openPhotoModal); get('closePhotoModal').addEventListener('click', closePhotoModal); get('nextPhoto').addEventListener('click', nextPhoto); get('prevPhoto').addEventListener('click', async () => { if (photoIndex > 0 && await saveCurrentPhoto()) { photoIndex--; renderPhotoSlide(); } });
-        get('photoInput').addEventListener('change', event => { if (event.target.files[0]) { pendingFiles.set(photoRows[photoIndex].dataset.id, event.target.files[0]); get('photoStatus').textContent = ''; renderPhotoSlide(); } });
+        get('photoInput').addEventListener('change', async event => { if (!event.target.files[0]) return; const file = event.target.files[0]; get('photoStatus').textContent = 'Mempersiapkan foto...'; try { const compressed = await compressImage(file, { maxDimension: 1200, quality: 0.8 }); pendingFiles.set(photoRows[photoIndex].dataset.id, compressed); get('photoStatus').textContent = ''; renderPhotoSlide(); } catch (error) { get('photoStatus').textContent = error.message || 'Foto tidak dapat diproses.'; } });
         get('photoSlide').addEventListener('touchstart', event => get('photoSlide').dataset.touchStart = event.changedTouches[0].screenX, { passive: true }); get('photoSlide').addEventListener('touchend', event => { const delta = event.changedTouches[0].screenX - Number(get('photoSlide').dataset.touchStart); if (delta < -50) nextPhoto(); if (delta > 50 && photoIndex > 0) get('prevPhoto').click(); }, { passive: true });
         document.addEventListener('keydown', event => { if (event.key === 'Escape') closePhotoModal(); if (get('photoModal').classList.contains('flex') && event.key === 'ArrowRight') nextPhoto(); if (get('photoModal').classList.contains('flex') && event.key === 'ArrowLeft') get('prevPhoto').click(); });
         renderPage(1);

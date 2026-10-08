@@ -75,6 +75,24 @@ class AdminKaryawanTest extends TestCase
         $response->assertSessionHasErrors(['nip', 'barcode_value']);
     }
 
+    public function test_admin_cannot_upload_a_photo_larger_than_two_megabytes(): void
+    {
+        $admin = AdminUser::create(['username' => 'admin', 'password' => 'admin123']);
+        $karyawan = Karyawan::create([
+            'nip' => 'LMG-2026-450',
+            'nama' => 'Karyawan Terlalu Besar',
+            'bagian' => 'HRD',
+            'barcode_value' => 'BARCODE-450',
+        ]);
+
+        $response = $this->withSession(['admin_user_id' => $admin->id])
+            ->post(route('admin.karyawan.photo', $karyawan), [
+                'foto' => UploadedFile::fake()->image('besar.jpg', 1200, 1200)->size(3000),
+            ]);
+
+        $response->assertSessionHasErrors(['foto']);
+    }
+
     public function test_admin_can_upload_and_replace_a_karyawan_photo(): void
     {
         Storage::fake('public');

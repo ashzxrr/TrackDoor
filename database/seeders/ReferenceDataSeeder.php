@@ -13,11 +13,11 @@ class ReferenceDataSeeder extends Seeder
      */
     public function run(): void
     {
-        foreach (['Gedung A', 'Gedung B'] as $namaGedung) {
+        foreach (['LowRisk', 'HighRisk', 'Medium Risk'] as $namaGedung) {
             Gedung::firstOrCreate(['nama_gedung' => $namaGedung]);
         }
 
-        foreach (['Ke toilet', 'Ke klinik', 'Ambil barang', 'Urusan pribadi', 'Lainnya'] as $label) {
+        foreach (['Ke toilet', 'Ke klinik', 'Ambil barang', 'Urusan pribadi','Mushollah (Sholat)' , 'Lainnya'] as $label) {
             AlasanKeluar::firstOrCreate(['label' => $label]);
         }
     }
